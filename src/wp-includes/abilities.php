@@ -30,6 +30,14 @@ function wp_register_core_ability_categories(): void {
 			'description' => __( 'Abilities that retrieve or modify user information and settings.' ),
 		)
 	);
+
+	wp_register_ability_category(
+		'navigation',
+		array(
+			'label'       => __( 'Navigation' ),
+			'description' => __( 'Abilities that retrieve or modify navigation menus and their items.' ),
+		)
+	);
 }
 
 /**
@@ -340,6 +348,227 @@ function wp_register_core_abilities(): void {
 			},
 			'permission_callback' => static function (): bool {
 				return current_user_can( 'manage_options' );
+			},
+			'meta'                => array(
+				'annotations'  => array(
+					'readonly'    => true,
+					'destructive' => false,
+					'idempotent'  => true,
+				),
+				'show_in_rest' => true,
+			),
+		)
+	);
+
+	$category_navigation = 'navigation';
+
+	wp_register_ability(
+		'core/list-nav-menus',
+		array(
+			'label'               => __( 'List Navigation Menus' ),
+			'description'         => __( 'Returns the registered navigation menu locations, which menu (if any) is assigned to each, and the list of all navigation menus that exist on the site.' ),
+			'category'            => $category_navigation,
+			'input_schema'        => array(
+				'type'                 => 'object',
+				'properties'           => array(),
+				'additionalProperties' => false,
+				'default'              => array(),
+			),
+			'output_schema'       => array(
+				'type'                 => 'object',
+				'properties'           => array(
+					'locations' => array(
+						'type'        => 'array',
+						'title'       => __( 'Registered Locations' ),
+						'description' => __( 'Theme-registered navigation menu locations and the menu currently assigned to each, if any.' ),
+						'items'       => array(
+							'type'       => 'object',
+							'properties' => array(
+								'location'      => array(
+									'type'        => 'string',
+									'description' => __( 'The location identifier registered by the theme.' ),
+								),
+								'description'   => array(
+									'type'        => 'string',
+									'description' => __( 'The human-readable label for this location.' ),
+								),
+								'assigned_menu' => array(
+									'type'        => array( 'integer', 'null' ),
+									'description' => __( 'The term ID of the menu assigned to this location, or null if none is assigned.' ),
+								),
+							),
+						),
+					),
+					'menus'     => array(
+						'type'        => 'array',
+						'title'       => __( 'Navigation Menus' ),
+						'description' => __( 'All navigation menus that exist on the site, regardless of whether they are assigned to a location.' ),
+						'items'       => array(
+							'type'       => 'object',
+							'properties' => array(
+								'id'    => array(
+									'type'        => 'integer',
+									'description' => __( 'The term ID of the menu.' ),
+								),
+								'name'  => array(
+									'type'        => 'string',
+									'description' => __( 'The display name of the menu.' ),
+								),
+								'slug'  => array(
+									'type'        => 'string',
+									'description' => __( 'The URL-friendly slug of the menu.' ),
+								),
+								'count' => array(
+									'type'        => 'integer',
+									'description' => __( 'The number of items in the menu.' ),
+								),
+							),
+						),
+					),
+				),
+				'additionalProperties' => false,
+			),
+			'execute_callback'    => static function ( $input = array() ): array {
+				$locations   = get_registered_nav_menus();
+				$assignments = get_nav_menu_locations();
+
+				$location_results = array();
+				foreach ( $locations as $location => $description ) {
+					$assigned_menu_id    = isset( $assignments[ $location ] ) ? (int) $assignments[ $location ] : 0;
+					$location_results[] = array(
+						'location'      => $location,
+						'description'   => $description,
+						'assigned_menu' => $assigned_menu_id ? $assigned_menu_id : null,
+					);
+				}
+
+				$menu_results = array();
+				foreach ( wp_get_nav_menus() as $menu ) {
+					$menu_results[] = array(
+						'id'    => $menu->term_id,
+						'name'  => $menu->name,
+						'slug'  => $menu->slug,
+						'count' => (int) $menu->count,
+					);
+				}
+
+				return array(
+					'locations' => $location_results,
+					'menus'     => $menu_results,
+				);
+			},
+			'permission_callback' => static function (): bool {
+				return current_user_can( 'edit_theme_options' );
+			},
+			'meta'                => array(
+				'annotations'  => array(
+					'readonly'    => true,
+					'destructive' => false,
+					'idempotent'  => true,
+				),
+				'show_in_rest' => true,
+			),
+		)
+	);
+
+	wp_register_ability(
+		'core/get-nav-menu',
+		array(
+			'label'               => __( 'Get Navigation Menu' ),
+			'description'         => __( 'Returns the ordered list of items in a navigation menu, given its ID or slug.' ),
+			'category'            => $category_navigation,
+			'input_schema'        => array(
+				'type'                 => 'object',
+				'properties'           => array(
+					'menu' => array(
+						'type'        => array( 'integer', 'string' ),
+						'description' => __( 'The menu term ID or slug to retrieve items for.' ),
+					),
+				),
+				'required'             => array( 'menu' ),
+				'additionalProperties' => false,
+			),
+			'output_schema'       => array(
+				'type'                 => 'object',
+				'properties'           => array(
+					'id'    => array(
+						'type'        => 'integer',
+						'description' => __( 'The term ID of the menu.' ),
+					),
+					'name'  => array(
+						'type'        => 'string',
+						'description' => __( 'The display name of the menu.' ),
+					),
+					'items' => array(
+						'type'        => 'array',
+						'description' => __( 'The ordered list of items in the menu.' ),
+						'items'       => array(
+							'type'       => 'object',
+							'properties' => array(
+								'id'     => array(
+									'type'        => 'integer',
+									'description' => __( 'The post ID of the menu item.' ),
+								),
+								'title'  => array(
+									'type'        => 'string',
+									'description' => __( 'The link text of the menu item.' ),
+								),
+								'url'    => array(
+									'type'        => 'string',
+									'description' => __( 'The URL the menu item links to.' ),
+								),
+								'parent' => array(
+									'type'        => 'integer',
+									'description' => __( 'The post ID of the parent menu item, or 0 for a top-level item.' ),
+								),
+								'order'  => array(
+									'type'        => 'integer',
+									'description' => __( 'The position of the item within its parent.' ),
+								),
+								'target' => array(
+									'type'        => 'string',
+									'description' => __( 'The link target attribute, such as _blank. Empty if unset.' ),
+								),
+							),
+						),
+					),
+				),
+				'additionalProperties' => false,
+			),
+			'execute_callback'    => static function ( $input = array() ) {
+				$input      = is_array( $input ) ? $input : array();
+				$menu_input = $input['menu'] ?? '';
+				$menu       = wp_get_nav_menu_object( $menu_input );
+
+				if ( ! $menu ) {
+					return new WP_Error( 'ability_invalid_input', __( 'No navigation menu exists with that ID or slug.' ) );
+				}
+
+				$items = wp_get_nav_menu_items( $menu->term_id );
+				if ( ! $items ) {
+					$items = array();
+				}
+				$item_results = array();
+
+				foreach ( $items as $item ) {
+					$item_results[] = array(
+						'id'     => (int) $item->ID,
+						'title'  => $item->title,
+						'url'    => $item->url,
+						'parent' => (int) $item->menu_item_parent,
+						'order'  => (int) $item->menu_order,
+						'target' => $item->target,
+					);
+				}
+
+				return array(
+					'id'    => $menu->term_id,
+					'name'  => $menu->name,
+					'items' => $item_results,
+				);
+			},
+			'permission_callback' => static function (): bool {
+				return current_user_can( 'edit_theme_options' );
 			},
 			'meta'                => array(
 				'annotations'  => array(
